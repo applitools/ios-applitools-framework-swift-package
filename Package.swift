@@ -16,7 +16,7 @@ let package = Package(
     ],
     targets: [
         .binaryTarget(name: "Applitools_iOS",
-			          url: "https://applitools.jfrog.io/artifactory/mobile/ios/framework/4.0.165/Applitools_iOS.xcframework.zip",
-                      checksum: "a46b8691de743fba92b2ab37b369bc2f18bfd07db0f29375a5e22056ff10102a"),
+			          url: "https://applitools.jfrog.io/artifactory/mobile/ios/framework/4.0.166/Applitools_iOS.xcframework.zip",
+                      checksum: "4027881db659d708b9c1762127662a3e1cc25282fd596b70595ecbe243aaffbb"),
     ]
 )
