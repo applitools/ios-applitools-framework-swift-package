@@ -1,0 +1,93 @@
+name: Update Applitools iOS Framework SPM
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-package:
+    runs-on: macos-latest
+    env:
+      SPM_REPO: applitools/ios-applitools-framework-swift-package
+      STORAGE_URL: https://applitools.jfrog.io/artifactory/mobile/ios/framework
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          ref: main
+          persist-credentials: true
+
+      - name: Set up Git identity
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "[email protected]"
+      - name: Download latest framework (release)
+        run: |
+          curl -L -o Applitools_latest.xcframework.zip \
+            "${STORAGE_URL}/release/Applitools_iOS.xcframework.zip"
+      - name: Extract version from Info.plist
+        run: |
+          unzip -q Applitools_latest.xcframework.zip -d xcframework_contents
+          INFO_PLIST="xcframework_contents/Applitools_iOS.xcframework/ios-arm64/Applitools_iOS.framework/Info.plist"
+          SHORT_VER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$INFO_PLIST")
+          BUNDLE_VER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion"            "$INFO_PLIST")
+          VERSION="${SHORT_VER}.${BUNDLE_VER}"
+          echo "Detected framework version: $VERSION"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+      - name: Download versioned framework
+        run: |
+          curl -L -o Applitools_${VERSION}.xcframework.zip \
+            "${STORAGE_URL}/${VERSION}/Applitools_iOS.xcframework.zip"
+      - name: Compute and compare checksums
+        run: |
+          RELEASE="Applitools_latest.xcframework.zip"
+          VERSIONED="Applitools_${VERSION}.xcframework.zip"
+          CHK_REL=$(swift package compute-checksum "$RELEASE")
+          CHK_VER=$(swift package compute-checksum "$VERSIONED")
+          echo "Release checksum: $CHK_REL"
+          echo "Versioned checksum: $CHK_VER"
+          if [ "$CHK_REL" != "$CHK_VER" ]; then
+            echo "::error ::Checksum mismatch between release and versioned archives."
+            exit 1
+          fi
+          echo "CHECKSUM=$CHK_VER" >> $GITHUB_ENV
+          echo "Checksums match—ready to update if needed."
+      - name: Determine if update is needed
+        run: |
+          CURR=$(grep -Eo 'ios/framework/[0-9]+\.[0-9]+\.[0-9]+' Package.swift \
+                 | head -1 \
+                 | sed 's#.*/##')
+          echo "Current SPM version: $CURR"
+          echo "CURRENT_VERSION=$CURR" >> $GITHUB_ENV
+          if [ "$CURR" = "$VERSION" ]; then
+            echo "NEED_UPDATE=false" >> $GITHUB_ENV
+          else
+            echo "NEED_UPDATE=true"  >> $GITHUB_ENV
+          fi
+      - name: Dry run - nothing to do
+        if: env.NEED_UPDATE == 'false'
+        run: |
+          echo "Package.swift already at version $VERSION. All checks passed. Exiting dry run."
+      - name: Update Package.swift (URL & checksum)
+        if: env.NEED_UPDATE == 'true'
+        run: |
+          PACKAGE_FILE="Package.swift"
+          # Update the download URL to the version-specific path
+          sed -E -i '' \
+            "s#${STORAGE_URL}/(release|[0-9]+\.[0-9]+\.[0-9]+)/Applitools_iOS.xcframework.zip#${STORAGE_URL}/${VERSION}/Applitools_iOS.xcframework.zip#g" \
+            "$PACKAGE_FILE"
+          # Update the checksum
+          sed -i '' \
+            "s/checksum: *\"[0-9a-f]*\"/checksum: \"${CHECKSUM}\"/" \
+            "$PACKAGE_FILE"
+          echo "Package.swift updated to version $VERSION and checksum $CHECKSUM."
+      - name: Commit, tag & push
+        if: env.NEED_UPDATE == 'true'
+        run: |
+          git add Package.swift
+          git commit -m "${VERSION}"
+          git tag "${VERSION}"
+          git push origin main --tags
