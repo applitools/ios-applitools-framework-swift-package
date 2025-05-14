@@ -1,4 +1,4 @@
-name: Update Applitools iOS Framework SPM
+name: Update Applitools_iOS
 
 on:
   workflow_dispatch:
@@ -11,8 +11,8 @@ jobs:
     runs-on: macos-latest
     env:
       SPM_REPO: applitools/ios-applitools-framework-swift-package
-      STORAGE_URL: https://applitools.jfrog.io/artifactory/mobile/ios/framework
-
+      STORAGE_URL: https://sdksstorage.blob.core.windows.net/mobile/ios/nml/framework
+      
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -24,10 +24,12 @@ jobs:
         run: |
           git config user.name "GitHub Actions"
           git config user.email "[email protected]"
+
       - name: Download latest framework (release)
         run: |
           curl -L -o Applitools_latest.xcframework.zip \
             "${STORAGE_URL}/release/Applitools_iOS.xcframework.zip"
+
       - name: Extract version from Info.plist
         run: |
           unzip -q Applitools_latest.xcframework.zip -d xcframework_contents
@@ -37,10 +39,12 @@ jobs:
           VERSION="${SHORT_VER}.${BUNDLE_VER}"
           echo "Detected framework version: $VERSION"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
+
       - name: Download versioned framework
         run: |
           curl -L -o Applitools_${VERSION}.xcframework.zip \
             "${STORAGE_URL}/${VERSION}/Applitools_iOS.xcframework.zip"
+
       - name: Compute and compare checksums
         run: |
           RELEASE="Applitools_latest.xcframework.zip"
@@ -55,6 +59,7 @@ jobs:
           fi
           echo "CHECKSUM=$CHK_VER" >> $GITHUB_ENV
           echo "Checksums match—ready to update if needed."
+
       - name: Determine if update is needed
         run: |
           CURR=$(grep -Eo 'ios/framework/[0-9]+\.[0-9]+\.[0-9]+' Package.swift \
@@ -67,23 +72,34 @@ jobs:
           else
             echo "NEED_UPDATE=true"  >> $GITHUB_ENV
           fi
+
       - name: Dry run - nothing to do
         if: env.NEED_UPDATE == 'false'
         run: |
           echo "Package.swift already at version $VERSION. All checks passed. Exiting dry run."
+
       - name: Update Package.swift (URL & checksum)
         if: env.NEED_UPDATE == 'true'
         run: |
           PACKAGE_FILE="Package.swift"
-          # Update the download URL to the version-specific path
-          sed -E -i '' \
-            "s#${STORAGE_URL}/(release|[0-9]+\.[0-9]+\.[0-9]+)/Applitools_iOS.xcframework.zip#${STORAGE_URL}/${VERSION}/Applitools_iOS.xcframework.zip#g" \
-            "$PACKAGE_FILE"
-          # Update the checksum
-          sed -i '' \
-            "s/checksum: *\"[0-9a-f]*\"/checksum: \"${CHECKSUM}\"/" \
-            "$PACKAGE_FILE"
+
+          # 1. Extract the old download URL (anything ending in Applitools_iOS.xcframework.zip)
+          OLD_URL=$(grep -Eo 'https?://[^"]+/Applitools_iOS\.xcframework\.zip' "$PACKAGE_FILE" | head -1)
+          echo "Found old URL: $OLD_URL"
+
+          # 2. Build the new URL
+          NEW_URL="${STORAGE_URL}/${VERSION}/Applitools_iOS.xcframework.zip"
+          echo "New URL: $NEW_URL"
+
+          # 3. Replace the old URL with the new one
+          #    Note: we escape the slashes so sed can handle any host/path
+          sed -E -i '' "s#$(printf '%s' "$OLD_URL" | sed 's/[\/&]/\\&/g')#${NEW_URL}#g" "$PACKAGE_FILE"
+
+          # 4. Replace the checksum
+          sed -E -i '' "s/checksum: *\"[0-9a-f]{64}\"/checksum: \"${CHECKSUM}\"/" "$PACKAGE_FILE"
+
           echo "Package.swift updated to version $VERSION and checksum $CHECKSUM."
+
       - name: Commit, tag & push
         if: env.NEED_UPDATE == 'true'
         run: |
