@@ -16,7 +16,7 @@ let package = Package(
     ],
     targets: [
         .binaryTarget(name: "Applitools_iOS",
-			          url: "https://sdksstorage.blob.core.windows.net/mobile/ios/nml/framework/4.0.177/Applitools_iOS.xcframework.zip",
-                      checksum: "cf3e0aedb18843cae902b60536330c4f7b5b174320e10e6957b1bf94a3851dcd"),
+			          url: "https://sdksstorage.blob.core.windows.net/mobile/ios/nml/framework/4.0.180/Applitools_iOS.xcframework.zip",
+                      checksum: "457f3d7f20f06d94c8cf37dab8346ab196a16f745207ca2d6659274d602d3b39"),
     ]
 )
